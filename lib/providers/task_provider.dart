@@ -6,30 +6,34 @@ import 'package:uuid/uuid.dart';
 /// Proveedor para inyectar FakeRepository
 final repositoryProvider = Provider<FakeRepository>((ref) => FakeRepository());
 
-/// StateNotifierProvider que gestiona el estado de la lista de tareas y las operaciones CRUD
-final taskProvider = StateNotifierProvider<TaskNotifier, AsyncValue<List<Task>>>((ref) {
-  final repo = ref.watch(repositoryProvider);
-  return TaskNotifier(repo);
-});
+/// Provider con parámetro (family) para recibir username y proveer estado de tareas de ese usuario
+final taskProvider = StateNotifierProvider.family<TaskNotifier, AsyncValue<List<Task>>, String>(
+  (ref, username) {
+    final repo = ref.watch(repositoryProvider);
+    return TaskNotifier(repo, username);
+  },
+);
 
-/// StateNotifier que maneja la lógica del estado de tareas
+/// Notifier que maneja la lógica de estado de tareas para un usuario
 class TaskNotifier extends StateNotifier<AsyncValue<List<Task>>> {
   final FakeRepository repo;
+  final String username;
 
-  TaskNotifier(this.repo) : super(const AsyncValue.loading()) {
-    loadTasks(); // Carga inicial de tareas al instanciar
+  TaskNotifier(this.repo, this.username) : super(const AsyncValue.loading()) {
+    loadTasks();
   }
 
-  /// Carga las tareas y actualiza el estado con el resultado o error
+  /// Carga tareas del usuario y actualiza estado
   Future<void> loadTasks() async {
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() => repo.fetchTasks());
+    state = await AsyncValue.guard(() => repo.fetchTasks(username));
   }
 
-  /// Agrega una tarea y recarga el estado
+  /// Agrega tarea nueva asociada al usuario
   Future<void> addTask(String title, String description, DateTime dueDate, TaskPriority priority) async {
     final newTask = Task(
-      id: const Uuid().v4(), // Genera UUID único para cada tarea
+      id: const Uuid().v4(),
+      username: username,
       title: title,
       description: description,
       dueDate: dueDate,
@@ -39,24 +43,22 @@ class TaskNotifier extends StateNotifier<AsyncValue<List<Task>>> {
     await loadTasks();
   }
 
-  /// Cambia el estado de completado y actualiza la tarea
+  /// Cambia el estado completado de una tarea
   Future<void> toggleCompletion(Task task) async {
-    await repo.updateTask(task.copyWith(completed: !task.completed));
+    final updatedTask = task.copyWith(completed: !task.completed);
+    await repo.updateTask(updatedTask);
     await loadTasks();
   }
 
-  /// Elimina una tarea por su ID y recarga el estado
+  /// Elimina tarea por ID para este usuario
   Future<void> deleteTask(String id) async {
-    await repo.deleteTask(id);
+    await repo.deleteTask(username, id);
     await loadTasks();
   }
 
+  /// Edita tarea existente
   Future<void> editTask(Task updatedTask) async {
-  await repo.updateTask(updatedTask);
-  await loadTasks();
+    await repo.updateTask(updatedTask);
+    await loadTasks();
+  }
 }
-
-
-
-}
-

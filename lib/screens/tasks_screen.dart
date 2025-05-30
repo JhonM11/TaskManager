@@ -6,21 +6,88 @@ import 'login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/task_item.dart';
 
-/// Pantalla principal para mostrar lista de tareas y acciones CRUD
-class TasksScreen extends ConsumerWidget {
+/// Pantalla principal que muestra tareas del usuario activo
+class TasksScreen extends ConsumerStatefulWidget {
   const TasksScreen({super.key});
 
-  /// Cierra sesión borrando el username y redirigiendo a login
-  Future<void> _logout(BuildContext context) async {
+  @override
+  ConsumerState<TasksScreen> createState() => _TasksScreenState();
+}
+
+class _TasksScreenState extends ConsumerState<TasksScreen> {
+  String? username;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsername();
+  }
+
+  /// Carga el nombre de usuario activo desde SharedPreferences
+  Future<void> _loadUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      username = prefs.getString('username');
+    });
+  }
+
+  /// Cierra sesión y regresa a login
+  Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('username');
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    if (username == null) {
+      // Mientras carga el username muestra loader
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    // Usar el provider parametrizado con username para obtener tareas sólo del usuario activo
+    final taskState = ref.watch(taskProvider(username!));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Tareas de $username'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+            tooltip: 'Cerrar sesión',
+          ),
+        ],
+      ),
+      body: taskState.when(
+        data: (tasks) {
+          if (tasks.isEmpty) {
+            return const Center(child: Text('No tienes tareas creadas'));
+          }
+          return ListView.builder(
+            itemCount: tasks.length,
+            itemBuilder: (_, index) => TaskItem(
+              task: tasks[index],
+              username: username!,  // Aquí corregimos pasando el username
+            ),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(child: Text('Error: $error')),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddTaskDialog(),
+        child: const Icon(Icons.add),
+        tooltip: 'Agregar tarea',
+      ),
+    );
+  }
+
   /// Muestra diálogo para agregar nueva tarea
-  void _showAddTaskDialog(BuildContext context, WidgetRef ref) {
+  void _showAddTaskDialog() {
     final titleController = TextEditingController();
     final descriptionController = TextEditingController();
     DateTime? selectedDate;
@@ -68,9 +135,9 @@ class TasksScreen extends ConsumerWidget {
                           lastDate: DateTime(now.year + 5),
                         );
                         if (pickedDate != null) {
-                          selectedDate = pickedDate;
-                          // Usar setState en StatefulBuilder para refrescar diálogo
-                          (context as Element).markNeedsBuild();
+                          setState(() {
+                            selectedDate = pickedDate;
+                          });
                         }
                       },
                     )
@@ -89,7 +156,9 @@ class TasksScreen extends ConsumerWidget {
                       .toList(),
                   onChanged: (value) {
                     if (value != null) {
-                      priority = value;
+                      setState(() {
+                        priority = value;
+                      });
                     }
                   },
                 ),
@@ -111,57 +180,20 @@ class TasksScreen extends ConsumerWidget {
                   );
                   return;
                 }
-                await ref.read(taskProvider.notifier).addTask(
+                await ref
+                    .read(taskProvider(username!).notifier)
+                    .addTask(
                       titleController.text.trim(),
                       descriptionController.text.trim(),
                       selectedDate!,
                       priority,
                     );
-                if (context.mounted) Navigator.of(context).pop();
+                if (mounted) Navigator.of(context).pop();
               }
             },
             child: const Text('Guardar'),
           ),
         ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final taskState = ref.watch(taskProvider);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mis Tareas'),
-        actions: [
-          IconButton(
-            onPressed: () => _logout(context),
-            icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar sesión',
-          ),
-        ],
-      ),
-      body: taskState.when(
-        data: (tasks) {
-          if (tasks.isEmpty) {
-            return const Center(child: Text('No hay tareas registradas'));
-          }
-          return ListView.builder(
-            itemCount: tasks.length,
-            itemBuilder: (_, index) {
-              final task = tasks[index];
-              return TaskItem(task: task);
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('Error: $error')),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddTaskDialog(context, ref),
-        child: const Icon(Icons.add),
-        tooltip: 'Agregar tarea',
       ),
     );
   }

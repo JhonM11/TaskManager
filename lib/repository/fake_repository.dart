@@ -1,35 +1,41 @@
 import 'dart:async';
 import '../models/task.dart';
 
-/// Repositorio simulado que actúa como API fake con respuestas retrasadas para simular latencia
+/// Repositorio simulado que almacena tareas por usuario en memoria
 class FakeRepository {
-  final List<Task> _tasks = [];
+  /// Mapa de username a lista de tareas para ese usuario
+  final Map<String, List<Task>> _tasksByUser = {};
 
-  /// Simula obtener todas las tareas (GET)
-  Future<List<Task>> fetchTasks() async {
-    await Future.delayed(const Duration(seconds: 2)); // Simula latencia de red
-    return List.unmodifiable(_tasks); // Retorna una copia inmutable para evitar modificaciones externas
+  /// Obtiene la lista de tareas del usuario especificado
+  Future<List<Task>> fetchTasks(String username) async {
+    await Future.delayed(const Duration(seconds: 2)); // Simula latencia
+    return List.unmodifiable(_tasksByUser[username] ?? []);
   }
 
-  /// Simula agregar una nueva tarea (POST)
+  /// Agrega una tarea a la lista del usuario correspondiente
   Future<Task> addTask(Task task) async {
     await Future.delayed(const Duration(seconds: 1));
-    _tasks.add(task);
+    _tasksByUser.putIfAbsent(task.username, () => []);
+    _tasksByUser[task.username]!.add(task);
     return task;
   }
 
-  /// Simula actualizar una tarea existente (PUT)
+  /// Actualiza una tarea existente para el usuario dado
   Future<Task> updateTask(Task updatedTask) async {
     await Future.delayed(const Duration(seconds: 1));
-    final index = _tasks.indexWhere((task) => task.id == updatedTask.id);
-    if (index == -1) throw Exception('Task not found');
-    _tasks[index] = updatedTask;
+    final tasks = _tasksByUser[updatedTask.username];
+    if (tasks == null) throw Exception('No se encontraron tareas para el usuario');
+    final index = tasks.indexWhere((t) => t.id == updatedTask.id);
+    if (index == -1) throw Exception('Tarea no encontrada');
+    tasks[index] = updatedTask;
     return updatedTask;
   }
 
-  /// Simula eliminar una tarea (DELETE)
-  Future<void> deleteTask(String id) async {
+  /// Elimina una tarea por ID para el usuario dado
+  Future<void> deleteTask(String username, String id) async {
     await Future.delayed(const Duration(seconds: 1));
-    _tasks.removeWhere((task) => task.id == id);
+    final tasks = _tasksByUser[username];
+    if (tasks == null) return;
+    tasks.removeWhere((t) => t.id == id);
   }
 }
