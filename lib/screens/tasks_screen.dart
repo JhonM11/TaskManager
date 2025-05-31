@@ -6,7 +6,6 @@ import 'login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/task_item.dart';
 
-/// Pantalla principal que muestra tareas del usuario activo
 class TasksScreen extends ConsumerStatefulWidget {
   const TasksScreen({super.key});
 
@@ -23,7 +22,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     _loadUsername();
   }
 
-  /// Carga el nombre de usuario activo desde SharedPreferences
   Future<void> _loadUsername() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -31,7 +29,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     });
   }
 
-  /// Cierra sesión y regresa a login
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('username');
@@ -44,11 +41,9 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   @override
   Widget build(BuildContext context) {
     if (username == null) {
-      // Mientras carga el username muestra loader
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // Usar el provider parametrizado con username para obtener tareas sólo del usuario activo
     final taskState = ref.watch(taskProvider(username!));
 
     return Scaffold(
@@ -63,18 +58,15 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         ],
       ),
       body: taskState.when(
-        data: (tasks) {
-          if (tasks.isEmpty) {
-            return const Center(child: Text('No tienes tareas creadas'));
-          }
-          return ListView.builder(
-            itemCount: tasks.length,
-            itemBuilder: (_, index) => TaskItem(
-              task: tasks[index],
-              username: username!,  // Aquí corregimos pasando el username
-            ),
-          );
-        },
+        data: (tasks) => tasks.isEmpty
+            ? const Center(child: Text('No tienes tareas creadas'))
+            : ListView.builder(
+                itemCount: tasks.length,
+                itemBuilder: (_, index) => TaskItem(
+                  task: tasks[index],
+                  username: username!,
+                ),
+              ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(child: Text('Error: $error')),
       ),
@@ -86,7 +78,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     );
   }
 
-  /// Muestra diálogo para agregar nueva tarea
   void _showAddTaskDialog() {
     final titleController = TextEditingController();
     final descriptionController = TextEditingController();
@@ -107,22 +98,26 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 TextFormField(
                   controller: titleController,
                   decoration: const InputDecoration(labelText: 'Título'),
-                  validator: (value) =>
-                      value == null || value.isEmpty ? 'Campo requerido' : null,
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Campo requerido'
+                      : null,
                 ),
                 TextFormField(
                   controller: descriptionController,
                   decoration: const InputDecoration(labelText: 'Descripción'),
-                  validator: (value) =>
-                      value == null || value.isEmpty ? 'Campo requerido' : null,
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Campo requerido'
+                      : null,
                 ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text(
-                      selectedDate == null
-                          ? 'Fecha de vencimiento'
-                          : 'Fecha: ${selectedDate!.toLocal()}'.split(' ')[0],
+                    Expanded(
+                      child: Text(
+                        selectedDate == null
+                            ? 'Fecha de vencimiento'
+                            : 'Fecha: ${selectedDate!.toLocal()}'.split(' ')[0],
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.calendar_today),
@@ -147,12 +142,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                   value: priority,
                   decoration: const InputDecoration(labelText: 'Prioridad'),
                   items: TaskPriority.values
-                      .map(
-                        (p) => DropdownMenuItem(
-                          value: p,
-                          child: Text(p.name.toUpperCase()),
-                        ),
-                      )
+                      .map((p) => DropdownMenuItem(
+                            value: p,
+                            child: Text(p.name.toUpperCase()),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     if (value != null) {
@@ -168,26 +161,38 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () async {
               if (_formKey.currentState!.validate()) {
                 if (selectedDate == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Seleccione una fecha')),
-                  );
+                      const SnackBar(content: Text('Seleccione una fecha')));
                   return;
                 }
-                await ref
-                    .read(taskProvider(username!).notifier)
-                    .addTask(
-                      titleController.text.trim(),
-                      descriptionController.text.trim(),
-                      selectedDate!,
-                      priority,
-                    );
+
+                final messenger = ScaffoldMessenger.of(context);
+                messenger.showSnackBar(const SnackBar(
+                  content: Row(children: [
+                    CircularProgressIndicator(),
+                    SizedBox(width: 10),
+                    Text('Guardando tarea...')
+                  ]),
+                  duration: Duration(minutes: 1),
+                ));
+
+                await ref.read(taskProvider(username!).notifier).addTask(
+                    titleController.text.trim(),
+                    descriptionController.text.trim(),
+                    selectedDate!,
+                    priority);
+
+                messenger.hideCurrentSnackBar();
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Tarea guardada ✔')),
+                );
+
                 if (mounted) Navigator.of(context).pop();
               }
             },
