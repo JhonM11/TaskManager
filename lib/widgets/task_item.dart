@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart'; // Para formatear fechas
+import 'package:intl/intl.dart';
 import '../models/task.dart';
 import '../providers/task_provider.dart';
 
-/// Widget que representa una tarea en la lista con opciones para editar, completar y eliminar.
-/// Recibe la tarea y el username del usuario activo para interactuar con el provider correcto.
+/// Widget que representa una tarjeta de tarea con sus acciones
 class TaskItem extends ConsumerWidget {
   final Task task;
-  final String
-  username; // Usuario propietario de la tarea, necesario para el provider family
+  final String username;
 
-  const TaskItem({super.key, required this.task, required this.username});
+  // Funciones callback para notificaciones
+  final void Function(String, IconData, Color)? onCompleted;
+  final void Function(String, IconData, Color)? onDeleted;
+  final void Function(String, IconData, Color)? onUpdated;
 
-  /// Retorna el color asociado a la prioridad
+  const TaskItem({
+    super.key,
+    required this.task,
+    required this.username,
+    this.onCompleted,
+    this.onDeleted,
+    this.onUpdated,
+  });
+
+  /// Color basado en la prioridad
   Color _priorityColor(TaskPriority priority) {
     switch (priority) {
       case TaskPriority.alta:
@@ -25,7 +35,7 @@ class TaskItem extends ConsumerWidget {
     }
   }
 
-  /// Retorna el icono asociado a la prioridad
+  /// Icono basado en la prioridad
   IconData _priorityIcon(TaskPriority priority) {
     switch (priority) {
       case TaskPriority.alta:
@@ -39,13 +49,11 @@ class TaskItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Formateamos la fecha para mostrarla legible
     final dueDateFormatted = DateFormat('dd/MM/yyyy').format(task.dueDate);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: InkWell(
-        // Al tocar la tarjeta se abre el diálogo para editar la tarea
         onTap: () => _showEditTaskDialog(context, ref, task),
         child: ListTile(
           leading: Icon(
@@ -55,7 +63,8 @@ class TaskItem extends ConsumerWidget {
           title: Text(
             task.title,
             style: TextStyle(
-              decoration: task.completed ? TextDecoration.lineThrough : null,
+              decoration:
+                  task.completed ? TextDecoration.lineThrough : null,
             ),
           ),
           subtitle: Text(
@@ -66,21 +75,43 @@ class TaskItem extends ConsumerWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Checkbox para marcar la tarea como completada o no
+              // Completar o desmarcar
               Checkbox(
                 value: task.completed,
-                onChanged:
-                    (_) => ref
-                        .read(taskProvider(username).notifier)
-                        .toggleCompletion(task),
+                onChanged: (_) async {
+                  final wasCompleted = task.completed;
+                  await ref
+                      .read(taskProvider(username).notifier)
+                      .toggleCompletion(task);
+
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final nowCompleted = !wasCompleted;
+                    onCompleted?.call(
+                      nowCompleted
+                          ? 'Tarea completada.'
+                          : 'Tarea marcada como incompleta.',
+                      nowCompleted ? Icons.check_circle : Icons.undo,
+                      nowCompleted ? Colors.green : Colors.orange,
+                    );
+                  });
+                },
               ),
-              // Botón para eliminar la tarea
+              // Eliminar tarea
               IconButton(
                 icon: const Icon(Icons.delete, color: Colors.redAccent),
-                onPressed:
-                    () => ref
-                        .read(taskProvider(username).notifier)
-                        .deleteTask(task.id),
+                onPressed: () async {
+                  await ref
+                      .read(taskProvider(username).notifier)
+                      .deleteTask(task.id);
+
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    onDeleted?.call(
+                      'Tarea eliminada.',
+                      Icons.delete,
+                      Colors.red,
+                    );
+                  });
+                },
               ),
             ],
           ),
@@ -89,91 +120,73 @@ class TaskItem extends ConsumerWidget {
     );
   }
 
-  /// Muestra un diálogo modal para editar la tarea
+  /// Diálogo para editar tarea
   void _showEditTaskDialog(BuildContext context, WidgetRef ref, Task task) {
     final titleController = TextEditingController(text: task.title);
     final descriptionController = TextEditingController(text: task.description);
     DateTime selectedDate = task.dueDate;
     TaskPriority priority = task.priority;
-    final _formKey = GlobalKey<FormState>();
+    final formKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
       builder: (context) {
-        // Usamos StatefulBuilder para manejar estado local dentro del diálogo
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('Editar Tarea'),
               content: SingleChildScrollView(
                 child: Form(
-                  key: _formKey,
+                  key: formKey,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Campo para editar título
                       TextFormField(
                         controller: titleController,
                         decoration: const InputDecoration(labelText: 'Título'),
-                        validator:
-                            (value) =>
-                                value == null || value.isEmpty
-                                    ? 'Campo requerido'
-                                    : null,
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'Campo requerido'
+                            : null,
                       ),
-                      // Campo para editar descripción
                       TextFormField(
                         controller: descriptionController,
-                        decoration: const InputDecoration(
-                          labelText: 'Descripción',
-                        ),
-                        validator:
-                            (value) =>
-                                value == null || value.isEmpty
-                                    ? 'Campo requerido'
-                                    : null,
+                        decoration: const InputDecoration(labelText: 'Descripción'),
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'Campo requerido'
+                            : null,
                       ),
                       const SizedBox(height: 10),
-                      // Selector de fecha de vencimiento con botón calendario
                       Row(
                         children: [
-                          Text(
-                            'Fecha: ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
-                          ),
+                          Text('Fecha: ${DateFormat('dd/MM/yyyy').format(selectedDate)}'),
                           IconButton(
                             icon: const Icon(Icons.calendar_today),
                             onPressed: () async {
                               final now = DateTime.now();
-                              final pickedDate = await showDatePicker(
+                              final picked = await showDatePicker(
                                 context: context,
                                 initialDate: selectedDate,
                                 firstDate: now,
                                 lastDate: DateTime(now.year + 5),
                               );
-                              if (pickedDate != null) {
+                              if (picked != null) {
                                 setState(() {
-                                  selectedDate = pickedDate;
+                                  selectedDate = picked;
                                 });
                               }
                             },
                           ),
                         ],
                       ),
-                      // Selector para prioridad
                       DropdownButtonFormField<TaskPriority>(
                         value: priority,
-                        decoration: const InputDecoration(
-                          labelText: 'Prioridad',
-                        ),
-                        items:
-                            TaskPriority.values
-                                .map(
-                                  (p) => DropdownMenuItem(
-                                    value: p,
-                                    child: Text(p.name.toUpperCase()),
-                                  ),
-                                )
-                                .toList(),
+                        decoration: const InputDecoration(labelText: 'Prioridad'),
+                        items: TaskPriority.values
+                            .map((p) => DropdownMenuItem(
+                                  value: p,
+                                  child: Text(p.name.toUpperCase()),
+                                ))
+                            .toList(),
                         onChanged: (value) {
                           if (value != null) {
                             setState(() {
@@ -187,28 +200,24 @@ class TaskItem extends ConsumerWidget {
                 ),
               ),
               actions: [
-                // Botón cancelar cierra el diálogo sin guardar
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('Cancelar'),
                 ),
-                // Botón actualizar valida y guarda cambios
                 ElevatedButton(
                   onPressed: () async {
-                    if (_formKey.currentState!.validate()) {
+                    if (formKey.currentState!.validate()) {
                       final messenger = ScaffoldMessenger.of(context);
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Row(
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(width: 10),
-                              Text('Actualizando tarea...'),
-                            ],
-                          ),
-                          duration: Duration(minutes: 1),
+                      messenger.showSnackBar(const SnackBar(
+                        content: Row(
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(width: 10),
+                            Text('Actualizando tarea...'),
+                          ],
                         ),
-                      );
+                        duration: Duration(minutes: 1),
+                      ));
 
                       final updatedTask = Task(
                         id: task.id,
@@ -225,8 +234,10 @@ class TaskItem extends ConsumerWidget {
                           .editTask(updatedTask);
 
                       messenger.hideCurrentSnackBar();
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('Tarea actualizada ✔')),
+                      onUpdated?.call(
+                        'Tarea actualizada.',
+                        Icons.update,
+                        Colors.indigo,
                       );
 
                       if (context.mounted) Navigator.of(context).pop();
